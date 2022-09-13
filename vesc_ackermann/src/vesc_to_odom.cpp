@@ -45,28 +45,29 @@ using std::placeholders::_1;
 using std_msgs::msg::Float64;
 using vesc_msgs::msg::VescStateStamped;
 
-VescToOdom::VescToOdom(const rclcpp::NodeOptions & options)
-: Node("vesc_to_odom_node", options),
-  odom_frame_("odom"),
-  base_frame_("base_link"),
-  use_servo_cmd_(true),
-  publish_tf_(false),
-  x_(0.0),
-  y_(0.0),
-  yaw_(0.0)
+VescToOdom::VescToOdom(const rclcpp::NodeOptions& options)
+  : Node("vesc_to_odom_node", options)
+  , odom_frame_("odom")
+  , base_frame_("base_link")
+  , use_servo_cmd_(true)
+  , publish_tf_(false)
+  , x_(0.0)
+  , y_(0.0)
+  , yaw_(0.0)
 {
   // get ROS parameters
   odom_frame_ = declare_parameter("odom_frame", odom_frame_);
   base_frame_ = declare_parameter("base_frame", base_frame_);
   use_servo_cmd_ = declare_parameter("use_servo_cmd_to_calc_angular_velocity", use_servo_cmd_);
 
-  speed_to_erpm_gain_ = declare_parameter("speed_to_erpm_gain").get<double>();
-  speed_to_erpm_offset_ = declare_parameter("speed_to_erpm_offset").get<double>();
+  speed_to_erpm_gain_ = declare_parameter<double>("speed_to_erpm_gain");
+  speed_to_erpm_offset_ = declare_parameter<double>("speed_to_erpm_offset");
 
-  if (use_servo_cmd_) {
-    steering_to_servo_gain_ = declare_parameter("steering_angle_to_servo_gain").get<double>();
-    steering_to_servo_offset_ = declare_parameter("steering_angle_to_servo_offset").get<double>();
-    wheelbase_ = declare_parameter("wheelbase").get<double>();
+  if (use_servo_cmd_)
+  {
+    steering_to_servo_gain_ = declare_parameter<double>("steering_angle_to_servo_gain");
+    steering_to_servo_offset_ = declare_parameter<double>("steering_angle_to_servo_offset");
+    wheelbase_ = declare_parameter<double>("wheelbase");
   }
 
   publish_tf_ = declare_parameter("publish_tf", publish_tf_);
@@ -75,41 +76,46 @@ VescToOdom::VescToOdom(const rclcpp::NodeOptions & options)
   odom_pub_ = create_publisher<Odometry>("odom", 10);
 
   // create tf broadcaster
-  if (publish_tf_) {
+  if (publish_tf_)
+  {
     tf_pub_.reset(new tf2_ros::TransformBroadcaster(this));
   }
 
   // subscribe to vesc state and. optionally, servo command
-  vesc_state_sub_ = create_subscription<VescStateStamped>(
-    "sensors/core", 10, std::bind(&VescToOdom::vescStateCallback, this, _1));
+  vesc_state_sub_ =
+      create_subscription<VescStateStamped>("sensors/core", 10, std::bind(&VescToOdom::vescStateCallback, this, _1));
 
-  if (use_servo_cmd_) {
-    servo_sub_ = create_subscription<Float64>(
-      "sensors/servo_position_command", 10, std::bind(&VescToOdom::servoCmdCallback, this, _1));
+  if (use_servo_cmd_)
+  {
+    servo_sub_ = create_subscription<Float64>("sensors/servo_position_command", 10,
+                                              std::bind(&VescToOdom::servoCmdCallback, this, _1));
   }
 }
 
 void VescToOdom::vescStateCallback(const VescStateStamped::SharedPtr state)
 {
   // check that we have a last servo command if we are depending on it for angular velocity
-  if (use_servo_cmd_ && !last_servo_cmd_) {
+  if (use_servo_cmd_ && !last_servo_cmd_)
+  {
     return;
   }
 
   // convert to engineering units
   double current_speed = (-state->state.speed - speed_to_erpm_offset_) / speed_to_erpm_gain_;
-  if (std::fabs(current_speed) < 0.05) {
+  if (std::fabs(current_speed) < 0.05)
+  {
     current_speed = 0.0;
   }
   double current_steering_angle(0.0), current_angular_velocity(0.0);
-  if (use_servo_cmd_) {
-    current_steering_angle =
-      (last_servo_cmd_->data - steering_to_servo_offset_) / steering_to_servo_gain_;
+  if (use_servo_cmd_)
+  {
+    current_steering_angle = (last_servo_cmd_->data - steering_to_servo_offset_) / steering_to_servo_gain_;
     current_angular_velocity = current_speed * tan(current_steering_angle) / wheelbase_;
   }
 
   // use current state as last state if this is our first time here
-  if (!last_state_) {
+  if (!last_state_)
+  {
     last_state_ = state;
   }
 
@@ -123,7 +129,8 @@ void VescToOdom::vescStateCallback(const VescStateStamped::SharedPtr state)
   double y_dot = current_speed * sin(yaw_);
   x_ += x_dot * dt.seconds();
   y_ += y_dot * dt.seconds();
-  if (use_servo_cmd_) {
+  if (use_servo_cmd_)
+  {
     yaw_ += current_angular_velocity * dt.seconds();
   }
 
@@ -158,7 +165,8 @@ void VescToOdom::vescStateCallback(const VescStateStamped::SharedPtr state)
   // Velocity uncertainty
   /** @todo Think about velocity uncertainty */
 
-  if (publish_tf_) {
+  if (publish_tf_)
+  {
     TransformStamped tf;
     tf.header.frame_id = odom_frame_;
     tf.child_frame_id = base_frame_;
@@ -168,12 +176,14 @@ void VescToOdom::vescStateCallback(const VescStateStamped::SharedPtr state)
     tf.transform.translation.z = 0.0;
     tf.transform.rotation = odom.pose.pose.orientation;
 
-    if (rclcpp::ok()) {
+    if (rclcpp::ok())
+    {
       tf_pub_->sendTransform(tf);
     }
   }
 
-  if (rclcpp::ok()) {
+  if (rclcpp::ok())
+  {
     odom_pub_->publish(odom);
   }
 }
